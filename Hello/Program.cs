@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace HelloWorld
 {
-    public class Hello
+    public class FMASC
     {
         private Dictionary<String, int> allWords = new Dictionary<String, int>();
         private Dictionary<String, Dictionary<String, int>> nextWords = new Dictionary<String, Dictionary<String, int>>();
@@ -16,7 +16,7 @@ namespace HelloWorld
             String input = "";
             String fullInput;
 
-            Hello hello = new Hello();
+            FMASC meow = new FMASC();
 
             while (repeat)
             {
@@ -32,12 +32,12 @@ namespace HelloWorld
 
                 } while (input != null);
 
-                int[] counts = hello.CountWords(fullInput);
+                int[] counts = meow.CountWords(fullInput);
                 // 0: word count
                 // 1: sentence count
                 // 2: paragraph count
 
-                hello.PrintWords(hello.longestWord);
+                meow.PrintWords(meow.longestWord);
                 Console.WriteLine("Word count: " + counts[0]);
 
                 if (counts[0] > 0)
@@ -60,8 +60,8 @@ namespace HelloWorld
                 }
                 else
                 {
-                    hello.allWords.Clear();
-                    hello.nextWords.Clear();    // Should this always happen?
+                    meow.allWords.Clear();
+                    meow.nextWords.Clear();    // Should this always happen?
                     Console.WriteLine("==========\n");
                 }
             }
