@@ -48,6 +48,22 @@ namespace HelloWorld
                     double wordsPerParagraph = Math.Round((double)counts[0] / (double)counts[2], 3);
                     Console.WriteLine("Average words per paragraph: " + wordsPerParagraph);
                 }
+
+                String genWords;
+                int genCount = 0;
+
+                while(genCount == 0)
+                {
+                    Console.WriteLine("How many words should be generated?");
+                    genWords = Console.ReadLine();
+
+                    if (!Int32.TryParse(genWords, out genCount))
+                    {
+                        Console.WriteLine("\nInvalid input provided.");
+                    }
+                }
+
+                meow.GenerateText(genCount);
                 
                 Console.WriteLine("Again? y/n");
 
@@ -182,7 +198,7 @@ namespace HelloWorld
                             String chapterTitle = input.Substring(currWordStart, i - currWordStart);
                             Console.WriteLine("Found chapter title: " + chapterTitle);
 
-                            while (input[i].Equals('\n'))
+                            while (i < input.Length && input[i].Equals('\n'))
                             {
                                 // Advance through any additional blank lines after chapter title.
                                 i++;
@@ -236,52 +252,55 @@ namespace HelloWorld
 
         private void AddWord(String word, String nextWord)
         {
-            // Add word to allWords dictionary.
-            if (allWords.TryGetValue(word, out int count))
+            if (word.Length > 0 && nextWord.Length > 0)
             {
-                allWords[word] = count + 1;
-            }
-            else
-            {
-                allWords.Add(word, 1);
-            }
-
-            // Add following word to nextWords list associated with preceding word.
-            if (nextWords.TryGetValue(word, out Dictionary<String, int> nextList))
-            {
-                if (nextList.TryGetValue(nextWord, out count))
+                // Add word to allWords dictionary.
+                if (allWords.TryGetValue(word, out int count))
                 {
-                    // Next word has been seen to follow first.
-                    nextList[nextWord] = count + 1;
-
-                    // Debugging
-                    /*
-                    if (word.Equals("the"))
-                    {
-                        Console.WriteLine(">>>Found \"{0} {1}\" again, occurrence {2}", word, nextWord, nextList[nextWord]);
-                    }
-                    */
+                    allWords[word] = count + 1;
                 }
                 else
                 {
-                    nextList.Add(nextWord, 1);
+                    allWords.Add(word, 1);
+                }
 
-                    // Debugging
-                    /*
-                    if (word.Equals("the"))
+                // Add following word to nextWords list associated with preceding word.
+                if (nextWords.TryGetValue(word, out Dictionary<String, int> nextList))
+                {
+                    if (nextList.TryGetValue(nextWord, out count))
                     {
-                        Console.WriteLine(">>>Found \"{0} {1}\" the first time.", word, nextWord);
+                        // Next word has been seen to follow first.
+                        nextList[nextWord] = count + 1;
+
+                        // Debugging
+                        /*
+                        if (word.Equals("the"))
+                        {
+                            Console.WriteLine(">>>Found \"{0} {1}\" again, occurrence {2}", word, nextWord, nextList[nextWord]);
+                        }
+                        */
                     }
-                    */
+                    else
+                    {
+                        nextList.Add(nextWord, 1);
+
+                        // Debugging
+                        /*
+                        if (word.Equals("the"))
+                        {
+                            Console.WriteLine(">>>Found \"{0} {1}\" the first time.", word, nextWord);
+                        }
+                        */
+                    }
+                }
+                else
+                {
+                    nextList = new Dictionary<string, int> { { nextWord, 1 } };
+                    nextWords.Add(word, nextList);
                 }
             }
-            else
-            {
-                nextList = new Dictionary<string, int> { { nextWord, 1 } };
-                nextWords.Add(word, nextList);
-            }
 
-            // TODO: Remove "" from allWords? Or use to mark new chapters.
+            // TODO: Use to mark new chapters?
         }
 
         private void PrintWords(int width)
@@ -321,25 +340,69 @@ namespace HelloWorld
             */
 
             // Display next words after most frequent word.
-            var sortedWords = from pair in allWords
-                              orderby pair.Value descending
-                              select pair;
-
-            KeyValuePair<String, int> topWord = sortedWords.ElementAt(0);
-
-            Dictionary<String, int> getNext = nextWords[topWord.Key];
-
-            var sortedNext = from pair in getNext
-                             orderby pair.Value descending
-                             select pair;
-
-            Console.WriteLine("\nMost common word (" + topWord.Value + " occurrences) was: " + topWord.Key);
-            Console.WriteLine("Next words were:");
-
-            foreach (KeyValuePair<String, int> item in sortedNext)
+            /*
+            if (allWords.Count > 0)
             {
-                Console.WriteLine("  " + item.Key + ": " + item.Value);
+                var sortedWords = from pair in allWords
+                                  orderby pair.Value descending
+                                  select pair;
+
+                KeyValuePair<String, int> topWord = sortedWords.ElementAt(0);
+
+                Dictionary<String, int> getNext = nextWords[topWord.Key];
+
+                var sortedNext = from pair in getNext
+                                 orderby pair.Value descending
+                                 select pair;
+
+                Console.WriteLine("\nMost common word (" + topWord.Value + " occurrences) was: " + topWord.Key);
+                Console.WriteLine("Next words were:");
+
+                foreach (KeyValuePair<String, int> item in sortedNext)
+                {
+                    Console.WriteLine("  " + item.Key + ": " + item.Value);
+                }
             }
+            */
+        }
+
+        private void SortLists()
+        {
+            allWords = allWords.OrderByDescending(pair => pair.Value).ToDictionary(pair => pair.Key, pair => pair.Value);
+
+            Dictionary<String, Dictionary<String, int>> placeholder = new Dictionary<string, Dictionary<string, int>>();
+                        
+            foreach (KeyValuePair<String, Dictionary<String, int>> item in nextWords)
+            {
+                placeholder.Add(item.Key, nextWords[item.Key].OrderByDescending(pair => pair.Value).ToDictionary(pair => pair.Key, pair => pair.Value));
+            }
+
+            nextWords = placeholder;
+        }
+
+        private void GenerateText(int count)
+        {
+            SortLists();
+
+            String generated = "";
+
+            // For now, pick just the top word.
+            String gotWord = allWords.ElementAt(0).Key;
+
+            String nextGeneratedWord = "";
+            generated = gotWord;
+
+            for (int i = 1; i < count; i++)
+            {
+                // For now, pick just the first word listed.
+                nextGeneratedWord = nextWords[gotWord].ElementAt(0).Key;
+
+                generated += " " + nextGeneratedWord;
+
+                gotWord = nextGeneratedWord;
+            }
+
+            Console.WriteLine(generated);
         }
 
         static int[] CountWordsOriginal(String input)
