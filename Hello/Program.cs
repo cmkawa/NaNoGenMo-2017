@@ -2,26 +2,41 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace HelloWorld
+namespace StrayCat
 {
     public class FMASC
     {
+        private struct Word
+        {
+            public int count;
+            public Dictionary<String, int> nextWords;
+            // Add information about word type.
+            public Boolean isCapitalized;
+            public Boolean isStartDialogue;
+            public Boolean isEndDialogue;
+            public int distanceToLastWord;
+        }
+
+        private Dictionary<String, Word> prediction = new Dictionary<String, Word>();
+        // TODO: Fold this into existing code, attempt to utilize the Word struct.
+
         private Dictionary<String, int> allWords = new Dictionary<String, int>();
         private Dictionary<String, Dictionary<String, int>> nextWords = new Dictionary<String, Dictionary<String, int>>();
         private int longestWord = 0;
+        private int totalCount = 0;
 
         public static void Main()
         {
-            Boolean repeat = true;
-            String input = "";
+            String input = "y";
             String fullInput;
 
             FMASC meow = new FMASC();
 
-            while (repeat)
+            while (input.Equals("y"))
             {
                 fullInput = "";
 
+                Console.WriteLine("==========\n");
                 Console.WriteLine("Enter text: (End input with line containing only CTRL + Z)");
 
                 do
@@ -51,37 +66,38 @@ namespace HelloWorld
 
                 String genWords;
                 int genCount = 0;
+                meow.SortLists();
 
-                while(genCount == 0)
+                input = "y";
+
+                while(input.Equals("y"))
                 {
-                    Console.WriteLine("How many words should be generated?");
-                    genWords = Console.ReadLine();
-
-                    if (!Int32.TryParse(genWords, out genCount))
+                    while (genCount == 0)
                     {
-                        Console.WriteLine("\nInvalid input provided.");
+                        Console.WriteLine("How many words should be generated?");
+                        genWords = Console.ReadLine();
+
+                        if (!Int32.TryParse(genWords, out genCount))
+                        {
+                            Console.WriteLine("\nInvalid input provided.");
+                        }
                     }
-                }
 
-                meow.GenerateText(genCount);
+                    meow.GenerateTextOriginal(genCount);
+
+                    Console.WriteLine("Generate more? y/n");
+                    input = Console.ReadLine();
+                }
                 
-                Console.WriteLine("Again? y/n");
-
+                Console.WriteLine("Submit next text? y/n");
                 input = Console.ReadLine();
-
-                if (!input.Equals("y"))
-                {
-                    repeat = false;
-                    Console.WriteLine("Goodbye!");
-                }
-                else
-                {
-                    meow.allWords.Clear();
-                    meow.nextWords.Clear();    // Should this always happen?
-                    Console.WriteLine("==========\n");
-                }
+                
+                meow.allWords.Clear();
+                meow.nextWords.Clear();   
+                // Should this always happen?
             }
 
+            Console.WriteLine("Goodbye!");
             System.Threading.Thread.Sleep(1500);
         }
 
@@ -91,7 +107,7 @@ namespace HelloWorld
             List<double> paragraphs = new List<double>();
             List<double> chapters = new List<double>();
 
-            int totalWordCount = 0;
+            totalCount = 0;
             int wordCount = 0;
             int sentenceCount = 0;
             int paragraphCount = 0;
@@ -113,14 +129,18 @@ namespace HelloWorld
                 {
                     if (IsStopChar(input[i]))
                     {
-                        lastWord = foundWord;
+                        if (foundWord.Length > 0)
+                        {
+                            lastWord = foundWord;
+                        }
+
                         foundWord = input.Substring(currWordStart, i - currWordStart);
 
                         if (foundWord.Length > 0)
                         {
                             //Console.WriteLine("Found: " + foundWord);
                             AddWord(lastWord, foundWord);
-                            totalWordCount++;
+                            totalCount++;
                             wordCount++;
 
                             if (foundWord.Length > longestWord)
@@ -247,57 +267,80 @@ namespace HelloWorld
                 CalculateStandardDeviation(chapters);
             }
 
-            return new int[] { totalWordCount, sentences.Count, paragraphs.Count };
+            return new int[] { totalCount, sentences.Count, paragraphs.Count };
         }
 
         private void AddWord(String word, String nextWord)
         {
-            if (word.Length > 0 && nextWord.Length > 0)
+            // Mark II: Probability select, one dictionary with Word objects.
+            if (prediction.TryGetValue(word, out Word wordStats))
             {
-                // Add word to allWords dictionary.
-                if (allWords.TryGetValue(word, out int count))
+                // Word was found in the prediction dictionary
+                wordStats.count++;
+
+                if (wordStats.nextWords.TryGetValue(nextWord, out int nextCount))
                 {
-                    allWords[word] = count + 1;
+                    // Next word was found in the nextWords list
+                    wordStats.nextWords[nextWord] = nextCount + 1;
                 }
                 else
                 {
-                    allWords.Add(word, 1);
+                    // Add new next-word
+                    wordStats.nextWords.Add(nextWord, 1);
                 }
+            }
+            else
+            {
+                // Initialize completely new entry in predictions
+                wordStats.count = 1;
+                wordStats.nextWords = new Dictionary<string, int> { { nextWord, 1 } };
+                prediction.Add(word, wordStats);
+            }
 
-                // Add following word to nextWords list associated with preceding word.
-                if (nextWords.TryGetValue(word, out Dictionary<String, int> nextList))
+            // Mark I: Random select, two dictionaries.
+            // Add word to allWords dictionary.
+            if (allWords.TryGetValue(word, out int count))
+            {
+                allWords[word] = count + 1;
+            }
+            else
+            {
+                allWords.Add(word, 1);
+            }
+
+            // Add following word to nextWords list associated with preceding word.
+            if (nextWords.TryGetValue(word, out Dictionary<String, int> nextList))
+            {
+                if (nextList.TryGetValue(nextWord, out count))
                 {
-                    if (nextList.TryGetValue(nextWord, out count))
-                    {
-                        // Next word has been seen to follow first.
-                        nextList[nextWord] = count + 1;
+                    // Next word has been seen to follow first.
+                    nextList[nextWord] = count + 1;
 
-                        // Debugging
-                        /*
-                        if (word.Equals("the"))
-                        {
-                            Console.WriteLine(">>>Found \"{0} {1}\" again, occurrence {2}", word, nextWord, nextList[nextWord]);
-                        }
-                        */
-                    }
-                    else
+                    // Debugging
+                    /*
+                    if (word.Equals("the"))
                     {
-                        nextList.Add(nextWord, 1);
-
-                        // Debugging
-                        /*
-                        if (word.Equals("the"))
-                        {
-                            Console.WriteLine(">>>Found \"{0} {1}\" the first time.", word, nextWord);
-                        }
-                        */
+                        Console.WriteLine(">>>Found \"{0} {1}\" again, occurrence {2}", word, nextWord, nextList[nextWord]);
                     }
+                    */
                 }
                 else
                 {
-                    nextList = new Dictionary<string, int> { { nextWord, 1 } };
-                    nextWords.Add(word, nextList);
+                    nextList.Add(nextWord, 1);
+
+                    // Debugging
+                    /*
+                    if (word.Equals("the"))
+                    {
+                        Console.WriteLine(">>>Found \"{0} {1}\" the first time.", word, nextWord);
+                    }
+                    */
                 }
+            }
+            else
+            {
+                nextList = new Dictionary<string, int> { { nextWord, 1 } };
+                nextWords.Add(word, nextList);
             }
 
             // TODO: Use to mark new chapters?
@@ -305,6 +348,11 @@ namespace HelloWorld
 
         private void PrintWords(int width)
         {
+            // Show contents of predictions (Mark II).
+            Console.WriteLine("Found " + prediction.Count + " different words!");
+            Console.WriteLine("Dictionary contains:");
+            Console.WriteLine("TEST");
+
             // Random display.
             /*
             Console.WriteLine("Found " + allWords.Count() + " different words!");
@@ -325,17 +373,18 @@ namespace HelloWorld
 
             // High Frequency display.
             /*
-            Console.WriteLine("\nTop 20 Most Frequent Words:");
+            int top = 50;
+            Console.WriteLine("\nTop {0} Most Frequent Words:", top);
 
-            var sortedWords = from pair in allWords
-                              orderby pair.Value ascending
+            var sortedWords = from pair in prediction
+                              orderby pair.Value.count ascending
                               select pair;
 
-            for (int i = 20; i > 0; i--)
+            for (int i = top; i > 0; i--)
             {
-                KeyValuePair<String, int> pair = sortedWords.ElementAt(sortedWords.Count() - i);
+                KeyValuePair<String, Word> pair = sortedWords.ElementAt(sortedWords.Count() - i);
                 String print = String.Format("{0," + width + "}", pair.Key);
-                Console.WriteLine(print + ": " + pair.Value);
+                Console.WriteLine(print + ": " + pair.Value.count);
             }
             */
 
@@ -374,29 +423,134 @@ namespace HelloWorld
                         
             foreach (KeyValuePair<String, Dictionary<String, int>> item in nextWords)
             {
-                placeholder.Add(item.Key, nextWords[item.Key].OrderByDescending(pair => pair.Value).ToDictionary(pair => pair.Key, pair => pair.Value));
+                placeholder.Add(item.Key, item.Value.OrderByDescending(pair => pair.Value).ToDictionary(pair => pair.Key, pair => pair.Value));
             }
 
             nextWords = placeholder;
+
+            prediction = prediction.OrderByDescending(pair => pair.Value.count).ToDictionary(pair => pair.Key, pair => pair.Value);
+
+            Dictionary<String, Word> tempPrediction = new Dictionary<string, Word>();
+            Dictionary<String, int> tempDict = new Dictionary<String, int>();
+            Word tempWord;
+
+            foreach (KeyValuePair<String, Word> dict in prediction)
+            {
+                tempDict = dict.Value.nextWords.OrderByDescending(pair => pair.Value).ToDictionary(pair => pair.Key, pair => pair.Value);
+                tempWord = dict.Value;
+                tempWord.nextWords = tempDict;
+                tempPrediction.Add(dict.Key, tempWord);
+            }
+
+            prediction = tempPrediction;
+        }
+
+        private void GenerateTextOriginal(int count)
+        {
+            String generated = "";
+            Random rand = new Random();
+
+            // For now, select a random word.
+            String gotWord = allWords.ElementAt(rand.Next(allWords.Count)).Key;
+            
+            String nextGeneratedWord = "";
+            generated = gotWord;
+
+            for (int i = 1; i < count; i++)
+            {
+                if(nextWords.TryGetValue(gotWord, out Dictionary<String, int> nextList))
+                {
+                    nextGeneratedWord = nextList.ElementAt(rand.Next(nextWords[gotWord].Count)).Key;
+                }
+                else
+                {
+                    nextGeneratedWord = allWords.ElementAt(rand.Next(allWords.Count)).Key;
+                }
+
+                generated += " " + nextGeneratedWord;
+
+                gotWord = nextGeneratedWord;
+            }
+
+            Console.WriteLine(generated);
         }
 
         private void GenerateText(int count)
         {
-            SortLists();
-
             String generated = "";
+            Random rand = new Random();
 
-            // For now, pick just the top word.
-            String gotWord = allWords.ElementAt(0).Key;
+            // For now, select a random word.
+            //String gotWord = allWords.ElementAt(rand.Next(allWords.Count)).Key;
+            int selectWord = rand.Next(totalCount);
+
+            Console.WriteLine(">>Rolled a {0} out of {1}.", selectWord, totalCount);
+
+            int index = 0;
+            int target = 0;
+
+            while (selectWord > target)
+            {
+                // Wrap around back to first element.
+                index = index % prediction.Count;
+                
+                target += prediction.ElementAt(index).Value.count;
+                index++;
+            }
+
+            // Step back to last word that captured the random roll.
+            index--;
+            index = index % prediction.Count;
+
+            String gotWord = prediction.ElementAt(index).Key;
+            Console.WriteLine(">>>FOUND " + gotWord);
+            // Eventually, check if a word is a start word before starting with it.
 
             String nextGeneratedWord = "";
             generated = gotWord;
 
             for (int i = 1; i < count; i++)
             {
-                // For now, pick just the first word listed.
-                nextGeneratedWord = nextWords[gotWord].ElementAt(0).Key;
+                /* allWords + nextWords version
+                if(nextWords.TryGetValue(gotWord, out Dictionary<String, int> nextList))
+                {
+                    nextGeneratedWord = nextList.ElementAt(rand.Next(nextWords[gotWord].Count)).Key;
+                }
+                else
+                {
+                    nextGeneratedWord = allWords.ElementAt(rand.Next(allWords.Count)).Key;
+                }
+                */
+                if (prediction.TryGetValue(gotWord, out Word wordStats))
+                {
+                    selectWord = rand.Next(wordStats.count);
+                    Console.WriteLine(">>Rolled a {0} out of {1}.", selectWord, wordStats.count);
+                    index = 0;
+                    target = 0;
 
+                    while (selectWord > target)
+                    {
+                        // Wrap around back to first element.
+                        index = index % wordStats.count;
+
+                        target += wordStats.nextWords.ElementAt(index).Value;
+                        index++;
+                    }
+
+                    // Step back to last word that captured the random roll.
+                    index--;
+                    index = index % wordStats.count;
+
+                    nextGeneratedWord = wordStats.nextWords.ElementAt(index).Key;
+                    Console.WriteLine(">>>FOUND " + gotWord);
+                }
+                else
+                {
+                    // Choose a random (unweighted) word from the first column.
+                    nextGeneratedWord = prediction.ElementAt(rand.Next(prediction.Count)).Key;
+                    Console.WriteLine(">>RANDOM " + gotWord);
+                }
+                
                 generated += " " + nextGeneratedWord;
 
                 gotWord = nextGeneratedWord;
