@@ -19,6 +19,7 @@ namespace StrayCat
 
         private Dictionary<String, Word> prediction = new Dictionary<String, Word>();
         private Dictionary<String, int> distances = new Dictionary<String, int>();
+        private Dictionary<String, List<String>> backWords = new Dictionary<String, List<String>>();
         // TODO: Fold this into existing code, attempt to utilize the Word struct.
 
         private Dictionary<String, int> allWords = new Dictionary<String, int>();
@@ -53,7 +54,6 @@ namespace StrayCat
                 // 1: sentence count
                 // 2: paragraph count
 
-                meow.PrintWords(meow.longestWord);
                 Console.WriteLine("Word count: " + counts[0]);
 
                 if (counts[0] > 0)
@@ -69,6 +69,7 @@ namespace StrayCat
                 int genCount = 0;
                 meow.SortLists();
                 meow.CountDistances();
+                meow.PrintWords(meow.longestWord);
 
                 input = "y";
 
@@ -119,6 +120,7 @@ namespace StrayCat
                 // ASSUME that the first line of input is a chapter header.
 
                 int currWordStart = 0;
+                String prevWord = "";
                 String lastWord = "";
                 String foundWord = "";
                 longestWord = 0;
@@ -134,6 +136,7 @@ namespace StrayCat
                     {
                         if (foundWord.Length > 0)
                         {
+                            prevWord = lastWord;
                             lastWord = foundWord;
                         }
 
@@ -157,13 +160,10 @@ namespace StrayCat
                                 sentenceCount++;
                                 endSentence = true;
                             }
-                            else
-                            {
-                                endSentence = false;
-                            }
 
                             //Console.WriteLine("Found: " + foundWord);
                             AddWord(lastWord, foundWord, endSentence);
+                            endSentence = false;
                         }
                         else if (IsNewline(input[i]))
                         {
@@ -182,10 +182,12 @@ namespace StrayCat
                                 if (wordCount > 0)
                                 {
                                     // Sentence ended without typical end punctuation.
-                                    //Console.WriteLine("Found at end of sentence: " + lastWord);
+                                    Console.WriteLine("Found at end of sentence: " + lastWord);
                                     sentences.Add(wordCount);
                                     wordCount = 0;
                                     sentenceCount++;
+
+                                    AddBackWord(prevWord, lastWord, true);
                                 }
                                 
                                 if (sentenceCount > 0)
@@ -298,6 +300,27 @@ namespace StrayCat
             return new int[] { totalCount, sentences.Count, paragraphs.Count };
         }
 
+        private void AddBackWord(String word, String nextWord, Boolean late = false)
+        {
+            if (backWords.TryGetValue(nextWord, out List<String> back))
+            {
+                if (!back.Contains(word))
+                {
+                    backWords[nextWord].Add(word);
+                }
+            }
+            else
+            {
+                backWords.Add(nextWord, new List<String> { word });
+            }
+
+            if (late && !distances.ContainsKey(nextWord))
+            {
+                // Back words added when they were discovered at the end of a paragraph.
+                distances.Add(nextWord, 0);
+            }
+        }
+
         private void AddWord(String word, String nextWord, Boolean endSentence)
         {
             // Mark II: Probability select, one dictionary with Word objects.
@@ -332,6 +355,8 @@ namespace StrayCat
             {
                 distances.Add(nextWord, 0);
             }
+
+            AddBackWord(word, nextWord);
 
             // Mark I: Random select, two dictionaries.
             // Add word to allWords dictionary.
@@ -390,6 +415,18 @@ namespace StrayCat
             {
                 Console.WriteLine(item.Key + " => " + item.Value.distanceToLastWord);
             }
+
+            /*
+            foreach (KeyValuePair<String, List<String>> back in backWords)
+            {
+                Console.WriteLine(back.Key + " is preceded by: ");
+
+                foreach (String item in back.Value)
+                {
+                    Console.WriteLine(">> " + item);
+                }
+            }
+            */
 
             // Compare Mark II to Mark I.
             /*
@@ -541,11 +578,68 @@ namespace StrayCat
 
             int index = 0;
 
-            while(index < distances.Count)
+            // Takes FOREVER. (n^2)
+            /*
+            while(distances.Count != prediction.Count)
             {
-                Console.WriteLine("Checking {0}: {1}", distances.ElementAt(index).Key, distances.ElementAt(index).Value);
+                KeyValuePair<String, int> dist = distances.ElementAt(index);
+
+                if (index % 100 == 0)
+                {
+                    Console.WriteLine("Checking {0} of {1} ==> {2}: {3}", index, prediction.Count, dist.Key, dist.Value);
+                }
+
+                for (int i = 0; i < prediction.Count; i++)
+                {
+                    KeyValuePair<String, Word> item = prediction.ElementAt(i);
+
+                    // Check nextWord lists of unevaluated words (distance -1).
+                    if (item.Value.distanceToLastWord == -1 && item.Value.nextWords.ContainsKey(dist.Key))
+                    {
+                        insert = item.Value;
+                        insert.distanceToLastWord = dist.Value + 1;
+                        prediction[item.Key] = insert;
+
+                        distances[item.Key] = insert.distanceToLastWord;
+                    }
+                }
 
                 index++;
+            }
+            */
+
+            int currentDistance;
+
+            while (distances.Count != backWords.Count)
+            {
+                KeyValuePair<String, int> target = distances.ElementAt(index);
+                currentDistance = target.Value + 1;
+                
+                foreach (String back in backWords[target.Key])
+                {
+                    if (distances.TryGetValue(back, out int countDist)) {
+                        if (countDist > currentDistance)
+                        {
+                            distances[back] = currentDistance;
+                        }
+                    }
+                    else
+                    {
+                        distances.Add(back, currentDistance);
+                    }
+                }
+
+                index++;
+            }
+
+            // Update all distances in prediction dictionary.
+            foreach (KeyValuePair<String, int> dist in distances)
+            {
+                if (prediction.TryGetValue(dist.Key, out Word insert))
+                {
+                    insert.distanceToLastWord = dist.Value;
+                    prediction[dist.Key] = insert;
+                }
             }
         }
 
@@ -581,6 +675,10 @@ namespace StrayCat
 
         private void GenerateText(int count)
         {
+            // TODO: Properly set this as an option.
+            int reset = 20;
+            int wordsInSentence = reset;
+
             String generated = "";
             Random rand = new Random();
 
@@ -588,7 +686,7 @@ namespace StrayCat
             //String gotWord = allWords.ElementAt(rand.Next(allWords.Count)).Key;
             int selectWord = rand.Next(totalCount);
 
-            Console.WriteLine(">>Rolled a {0} out of {1}.", selectWord, totalCount);
+            //Console.WriteLine(">>Rolled a {0} out of {1}.", selectWord, totalCount);
 
             int index = 0;
             int target = 0;
@@ -613,7 +711,7 @@ namespace StrayCat
             }
 
             String gotWord = prediction.ElementAt(index).Key;
-            Console.WriteLine("{0} [{1}]", gotWord, index);
+            //Console.WriteLine("{0} [{1}]", gotWord, index);
             // Eventually, check if a word is a start word before starting with it.
 
             String nextGeneratedWord = "";
@@ -635,7 +733,7 @@ namespace StrayCat
                 if (prediction.TryGetValue(gotWord, out Word wordStats) && wordStats.nextWords.Count > 0)
                 {
                     selectWord = rand.Next(wordStats.count);
-                    Console.Write(">>Rolled a {0} out of {1}: ", selectWord, wordStats.count);
+                    //Console.Write(">>Rolled a {0} out of {1}: ", selectWord, wordStats.count);
                     index = 0;
                     target = 0;
 
@@ -651,21 +749,41 @@ namespace StrayCat
                         index++;
                     }
 
-                    // Step back to last word that captured the random roll.
-                    index--;
-                    if (index < 0)
-                    {
-                        index = wordStats.nextWords.Count - 1;
-                    }
+                    int rolledIndex = index;
 
-                    nextGeneratedWord = wordStats.nextWords.ElementAt(index).Key;
-                    Console.WriteLine("{0} [{1}]", nextGeneratedWord, index);
+                    // Step back to last word that captured the random roll.
+                    do
+                    {
+                        index--;
+                        if (index < 0)
+                        {
+                            index = wordStats.nextWords.Count - 1;
+                        }
+
+                        nextGeneratedWord = wordStats.nextWords.ElementAt(index).Key;
+
+                        //Console.WriteLine("Trying to capture {0}, with a distance of {1}; {2} remaining. ", 
+                        //    nextGeneratedWord, prediction[nextGeneratedWord].distanceToLastWord, wordsInSentence);
+
+                        if (index == rolledIndex)
+                        {
+                            break;
+                        }
+                    }
+                    while (prediction[nextGeneratedWord].distanceToLastWord > wordsInSentence);
+                    //Console.WriteLine("{0} [{1}]", nextGeneratedWord, index);
+
+                    wordsInSentence--;
+                    if (wordsInSentence < 0 || prediction[nextGeneratedWord].distanceToLastWord == 0)
+                    {
+                        wordsInSentence = reset;
+                    }
                 }
                 else
                 {
                     // Choose a random (unweighted) word from the first column.
                     nextGeneratedWord = prediction.ElementAt(rand.Next(prediction.Count)).Key;
-                    Console.WriteLine(">>RANDOM " + nextGeneratedWord);
+                    //Console.WriteLine(">>RANDOM " + nextGeneratedWord);
                 }
                 
                 generated += " " + nextGeneratedWord;
